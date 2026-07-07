@@ -322,6 +322,6 @@ $$
 
 نتایج عملکرد در جدول ۲ مقاله خلاصه شده است:
 
-[Paper Table 2](images/Combinatorical Optimization Project Report-1.png)
+![Paper Table 2](images/Combinatorical Optimization Project Report-1.png)
 
 ---
