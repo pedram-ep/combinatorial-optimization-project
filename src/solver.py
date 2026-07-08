@@ -35,7 +35,7 @@ def solve_all_models(
     solve all the models and return the results for all of them as a dictionary
     """
     instance = _normalize_data(data)
-    formulations = ["SO-BB", "SO-NW-CUT", "MIN-CUT", "MSMR-CUT", "SO-NW-BIN-CUT"]
+    formulations = ["SO-BB", "SO-NW-CUT", "MIN-CUT", "MSMR-CUT", "SO-NW-BIN-CUT", "MIN-BIN-CUT", "MSMR-BIN-CUT", "MSMR-EF"]
     results = {}
     for formulation in formulations:
         solved = solve_model(instance, formulation=formulation, solver_name=solver_name, tee=tee)
