@@ -65,7 +65,7 @@ def print_summary(
 
 def solve_and_summarize_all(
         data: Dict[str, Any] | str | Path,
-        solver_name: str = "glpk",
+        solver_name: str = "cplex",
         tee: bool = False
         ) -> List[Dict[str, Any]]:
     """

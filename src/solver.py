@@ -8,7 +8,7 @@ from .data_loader import _normalize_data
 def solve_model(
         data: Dict[str, Any] | str | Path,
         formulation: str = "SO-BB",
-        solver_name: str = "glpk",
+        solver_name: str = "cplex",
         tee: bool = False):
     """
     solve a single formulation and return the model and a compact solution summary.
@@ -29,7 +29,7 @@ def solve_model(
 
 def solve_all_models(
         data: Dict[str, Any] | str | Path,
-        solver_name: str = "glpk", tee: bool = False
+        solver_name: str = "cplex", tee: bool = False
         ) -> Dict[str, Dict[str, Any]]:
     """
     solve all the models and return the results for all of them as a dictionary
