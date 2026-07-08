@@ -73,3 +73,61 @@ def solve_and_summarize_all(
     """
     from .solver import solve_all_models
     return summarize_results(solve_all_models(data, solver_name=solver_name, tee=tee))
+
+def compute_metrics(assignment, data):
+    """Compute fairness and satisfaction metrics from an assignment."""
+    preferences = data['preferences']
+    n = data['n']
+    m = data['m']
+    
+    matched = [i for i in range(n) if assignment[i] is not None]
+    unmatched = [i for i in range(n) if assignment[i] is None]
+    
+    college_loads = {}
+    for j in range(m):
+        college_loads[j] = sum(1 for assigned in assignment.values() if assigned == j)
+    
+    ranks_achieved = []
+    for i in matched:
+        j = assignment[i]
+        rank = preferences[i].index(j)
+        ranks_achieved.append(rank)
+    
+    avg_rank = sum(ranks_achieved) / len(ranks_achieved) if ranks_achieved else None
+    max_rank = max(ranks_achieved) if ranks_achieved else None
+    
+    return {
+        'num_matched': len(matched),
+        'num_unmatched': len(unmatched),
+        'college_loads': college_loads,
+        'avg_preference_rank': avg_rank,
+        'max_preference_rank': max_rank,
+        'total_rank_objective': sum(ranks_achieved)
+    }
+
+def display_solution(formulation_name, model, data):
+    """
+    Display solution details for a single formulation.
+    """
+    print(f"\n{'='*60}")
+    print(f"Formulation: {formulation_name}")
+    print(f"{'='*60}")
+    
+    assignment = extract_assignment(model, data)
+    metrics = compute_metrics(assignment, data)
+    
+    try:
+        obj_value = pyo.value(model.Objective)
+        print(f"Objective value: {obj_value:.2f}")
+    except:
+        print(f"Objective value: NOT AVAILABLE")
+    
+    print(f"Students matched: {metrics['num_matched']}/{data['n']}")
+    print(f"Unmatched students: {metrics['num_unmatched']}")
+    print(f"Average preference rank: {metrics['avg_preference_rank']:.2f}" if metrics['avg_preference_rank'] else "N/A")
+    print(f"Max preference rank: {metrics['max_preference_rank']}" if metrics['max_preference_rank'] else "N/A")
+    print(f"Total rank objective: {metrics['total_rank_objective']}")
+    print(f"College loads: {metrics['college_loads']}")
+    print(f"Assignments: {assignment}")
+    
+    return metrics
