@@ -33,7 +33,7 @@ def generate_instance(n, m, score_range=(0, 100), quota_factor=2, complete=True,
         for j in colleges:
             base_score = random.randint(score_range[0], score_range[1])
             if strict:
-                score = base_score + i * 0.001
+                score = base_score * (n + 1) + i
             else:
                 score = base_score
             scores[f"{i},{j}"] = score
