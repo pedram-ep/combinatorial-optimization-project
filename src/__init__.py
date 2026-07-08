@@ -7,6 +7,7 @@ from .utils import (
     print_summary,
     solve_and_summarize_all,
     display_solution,
+    get_model_stats,
 )
 
 __all__ = [
@@ -18,4 +19,6 @@ __all__ = [
     "summarize_results",
     "print_summary",
     "solve_and_summarize_all",
+    "display_solution",
+    "get_model_stats",
 ]

@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 import pyomo.environ as pyo
+import tempfile
+import os
 
 def extract_assignment(
         model: pyo.ConcreteModel,
@@ -21,7 +23,6 @@ def extract_assignment(
                 break
         assignment[i] = assigned
     return assignment
-
 
 def summarize_results(
         results: Dict[str, Dict[str, Any]]
@@ -52,7 +53,6 @@ def summarize_results(
         )
     return rows
 
-
 def print_summary(
         rows: Iterable[Dict[str, Any]]
         ) -> None:
@@ -61,7 +61,6 @@ def print_summary(
         print("  college loads:", row["college_loads"])
         print("  assignments:", row["assignments"])
         print()
-
 
 def solve_and_summarize_all(
         data: Dict[str, Any] | str | Path,
@@ -131,3 +130,38 @@ def display_solution(formulation_name, model, data):
     print(f"Assignments: {assignment}")
     
     return metrics
+
+def get_model_stats(model):
+    """
+    Return a dict with:
+        num_vars: total number of variables
+        num_constraints: total number of constraints (including block constraints)
+        size_kb: size of the LP file in KB
+    """
+    # variables
+    num_vars = 0
+    for var in model.component_objects(pyo.Var, active=True):
+        num_vars += len(var)
+
+    # constraints
+    num_constraints = 0
+    for con in model.component_objects(pyo.Constraint, active=True):
+        if con.is_indexed():
+            num_constraints += len(con)
+        else:
+            num_constraints += 1
+
+    # write LP file to temp and get its size
+    with tempfile.NamedTemporaryFile(suffix='.lp', delete=False) as f:
+        temp_filename = f.name
+    try:
+        model.write(temp_filename, format='lp')
+        size_kb = os.path.getsize(temp_filename) / 1024.0
+    finally:
+        os.remove(temp_filename)
+
+    return {
+        'num_vars': num_vars,
+        'num_constraints': num_constraints,
+        'size_kb': size_kb,
+    }
