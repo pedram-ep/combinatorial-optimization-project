@@ -1,13 +1,14 @@
 import json
 import random
 
-def generate_instance(n, m, score_range=(0, 100), quota_factor=2, complete=True):
+def generate_instance(n, m, score_range=(0, 100), quota_factor=2, complete=True, strict=False):
     """
-    n: number of appliacants
+    n: number of applicants
     m: number of universities
-    score_range: range of scores (min, max)
-    quota_factor: factor for determining capacity (capacity = random between 1 and max(2, n//(m))*quota_factor)
+    score_range: range of scores
+    quota_factor: factor for determining capacity
     complete: if True, each applicant applies to all universities (complete list)
+    strict: if True, for each college all applicant scores are unique (no ties), by adding a tiny epsilon. 
     """
     # generating quotas for each university
     quotas = {}
@@ -27,9 +28,14 @@ def generate_instance(n, m, score_range=(0, 100), quota_factor=2, complete=True)
             colleges = random.sample(range(m), k)
         random.shuffle(colleges)
         preferences[i] = colleges  # order of preference
+        
         # generating scores for each university in the list
         for j in colleges:
-            score = random.randint(score_range[0], score_range[1])
+            base_score = random.randint(score_range[0], score_range[1])
+            if strict:
+                score = base_score + i * 0.001
+            else:
+                score = base_score
             scores[f"{i},{j}"] = score
 
     return {

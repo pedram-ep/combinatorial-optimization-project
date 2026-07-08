@@ -82,18 +82,18 @@ def main():
         "--no-complete", dest="complete", action="store_false",
         help="If set, applicants apply to a random subset (~60% of universities)."
     )
-    parser.add_argument(
-        "--output-dir", type=str, default="data/generated",
-        help="Directory where JSON files will be saved."
-    )
-    parser.add_argument(
-        "--small-filename", type=str, default="instance_small.json",
-        help="Filename for the small instance."
-    )
-    parser.add_argument(
-        "--medium-filename", type=str, default="instance_medium.json",
-        help="Filename for the medium instance."
-    )
+    # parser.add_argument(
+    #     "--output-dir", type=str, default="data/generated",
+    #     help="Directory where JSON files will be saved."
+    # )
+    # parser.add_argument(
+    #     "--small-filename", type=str, default="instance_small.json",
+    #     help="Filename for the small instance."
+    # )
+    # parser.add_argument(
+    #     "--medium-filename", type=str, default="instance_medium.json",
+    #     help="Filename for the medium instance."
+    # )
 
     args = parser.parse_args()
 
@@ -101,8 +101,15 @@ def main():
     random.seed(args.seed)
 
     # Create output directory if it doesn't exist
-    output_dir = Path(args.output_dir)
+    output_dir = Path("data/generated")
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    small_filename = "instance_small.json"
+    strict_small_filename = "instance_strict_small.json"
+
+    medium_filename = "instance_medium.json"
+    strict_medium_filename = "instance_strict_medium.json"
+
 
     # ---- Generate small instance ----
     small_data = generate_instance(
@@ -110,9 +117,10 @@ def main():
         m=args.small_m,
         score_range=(args.small_score_min, args.small_score_max),
         quota_factor=args.small_quota_factor,
-        complete=args.complete
+        complete=args.complete,
+        strict=False
     )
-    small_path = output_dir / args.small_filename
+    small_path = output_dir / small_filename
     save_instance(small_data, str(small_path))
     print(f"Saved small instance to: {small_path}")
 
@@ -122,11 +130,38 @@ def main():
         m=args.medium_m,
         score_range=(args.medium_score_min, args.medium_score_max),
         quota_factor=args.medium_quota_factor,
-        complete=args.complete
+        complete=args.complete,
+        strict=False
     )
-    medium_path = output_dir / args.medium_filename
+    medium_path = output_dir / medium_filename
     save_instance(medium_data, str(medium_path))
     print(f"Saved medium instance to: {medium_path}")
+
+    # ---- Generate strict small instance ----
+    strict_small_data = generate_instance(
+        n=args.small_n,
+        m=args.small_m,
+        score_range=(args.small_score_min, args.small_score_max),
+        quota_factor=args.small_quota_factor,
+        complete=args.complete,
+        strict=True
+    )
+    strict_small_path = output_dir / strict_small_filename
+    save_instance(strict_small_data, str(strict_small_path))
+    print(f"Saved strict small instance to: {strict_small_path}")
+
+    # ---- Generate strict medium instance ----
+    medium_strict_data = generate_instance(
+        n=args.medium_n,
+        m=args.medium_m,
+        score_range=(args.medium_score_min, args.medium_score_max),
+        quota_factor=args.medium_quota_factor,
+        complete=args.complete,
+        strict=True
+    )
+    strict_medium_path = output_dir / strict_medium_filename
+    save_instance(medium_strict_data, str(strict_medium_path))
+    print(f"Saved strict medium instance to: {strict_medium_path}")
 
 
 if __name__ == "__main__":
