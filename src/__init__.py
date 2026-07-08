@@ -6,6 +6,7 @@ from .utils import (
     summarize_results,
     print_summary,
     solve_and_summarize_all,
+    display_solution,
 )
 
 __all__ = [
