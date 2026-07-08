@@ -69,6 +69,29 @@ def main():
         help="Quota factor for the medium instance."
     )
 
+    # Parameters for the large instance
+    parser.add_argument(
+        "--large-n", type=int, default=1000,
+        help="Number of applicants for the large instance."
+    )
+    parser.add_argument(
+        "--large-m", type=int, default=20,
+        help="Number of universities for the large instance."
+    )
+    parser.add_argument(
+        "--large-score-min", type=int, default=0,
+        help="Minimum score for the large instance."
+    )
+    parser.add_argument(
+        "--large-score-max", type=int, default=50,
+        help="Maximum score for the large instance."
+    )
+    parser.add_argument(
+        "--large-quota-factor", type=float, default=2.0,
+        help="Quota factor for the large instance."
+    )
+
+
     # Common options
     parser.add_argument(
         "--seed", type=int, default=42,
@@ -82,18 +105,6 @@ def main():
         "--no-complete", dest="complete", action="store_false",
         help="If set, applicants apply to a random subset (~60% of universities)."
     )
-    # parser.add_argument(
-    #     "--output-dir", type=str, default="data/generated",
-    #     help="Directory where JSON files will be saved."
-    # )
-    # parser.add_argument(
-    #     "--small-filename", type=str, default="instance_small.json",
-    #     help="Filename for the small instance."
-    # )
-    # parser.add_argument(
-    #     "--medium-filename", type=str, default="instance_medium.json",
-    #     help="Filename for the medium instance."
-    # )
 
     args = parser.parse_args()
 
@@ -109,6 +120,9 @@ def main():
 
     medium_filename = "instance_medium.json"
     strict_medium_filename = "instance_strict_medium.json"
+
+    large_filename = "instance_large.json"
+    strict_large_filename = "instance_strict_large.json"
 
 
     # ---- Generate small instance ----
@@ -137,6 +151,19 @@ def main():
     save_instance(medium_data, str(medium_path))
     print(f"Saved medium instance to: {medium_path}")
 
+    # ---- Generate large instance ----
+    large_data = generate_instance(
+        n=args.large_n,
+        m=args.large_m,
+        score_range=(args.large_score_min, args.large_score_max),
+        quota_factor=args.large_quota_factor,
+        complete=args.complete,
+        strict=False
+    )
+    large_path = output_dir / large_filename
+    save_instance(large_data, str(large_path))
+    print(f"Saved large instance to: {large_path}")
+
     # ---- Generate strict small instance ----
     strict_small_data = generate_instance(
         n=args.small_n,
@@ -162,6 +189,19 @@ def main():
     strict_medium_path = output_dir / strict_medium_filename
     save_instance(medium_strict_data, str(strict_medium_path))
     print(f"Saved strict medium instance to: {strict_medium_path}")
+
+    # ---- Generate strict large instance ----
+    large_strict_data = generate_instance(
+        n=args.large_n,
+        m=args.large_m,
+        score_range=(args.large_score_min, args.large_score_max),
+        quota_factor=args.large_quota_factor,
+        complete=args.complete,
+        strict=True
+    )
+    strict_large_path = output_dir / strict_large_filename
+    save_instance(large_strict_data, str(strict_large_path))
+    print(f"Saved strict large instance to: {strict_large_path}")
 
 
 if __name__ == "__main__":
