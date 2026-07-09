@@ -4,6 +4,7 @@ Dataset generation script for the optimization problem.
 Generates two JSON instances:
   - small:   n=10, m=5,  scores 0–20,  quota_factor=1
   - medium:  n=50, m=20, scores 0–50,  quota_factor=2
+  - large:   n=1000, m=20, scores 0–50,  quota_factor=2
 
 All parameters are configurable via command‑line arguments.
 Output files are saved to a specified directory (default: data/generated/).
@@ -15,9 +16,9 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from generator import generate_instance, save_instance
+from src.generator import generate_instance, save_instance
 
 
 def main():
