@@ -65,13 +65,14 @@ def print_summary(
 def solve_and_summarize_all(
         data: Dict[str, Any] | str | Path,
         solver_name: str = "cplex",
-        tee: bool = False
+        tee: bool = False,
+        formulations: List[str] | None = None
         ) -> List[Dict[str, Any]]:
     """
     Convenience wrapper to solve all formulations and return comparable summaries.
     """
     from .solver import solve_all_models
-    return summarize_results(solve_all_models(data, solver_name=solver_name, tee=tee))
+    return summarize_results(solve_all_models(data, solver_name=solver_name, tee=tee, formulations=formulations))
 
 def compute_metrics(assignment, data):
     """Compute fairness and satisfaction metrics from an assignment."""

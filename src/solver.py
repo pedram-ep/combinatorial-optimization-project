@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 import pyomo.environ as pyo
 
 from .models.formulations import build_model
@@ -29,13 +29,14 @@ def solve_model(
 
 def solve_all_models(
         data: Dict[str, Any] | str | Path,
-        solver_name: str = "cplex", tee: bool = False
+        solver_name: str = "cplex",
+        tee: bool = False,
+        formulations: List[str] | None = None
         ) -> Dict[str, Dict[str, Any]]:
     """
     solve all the models and return the results for all of them as a dictionary
     """
     instance = _normalize_data(data)
-    formulations = ["SO-BB", "SO-NW-CUT", "MIN-CUT", "MSMR-CUT", "SO-NW-BIN-CUT", "MIN-BIN-CUT", "MSMR-BIN-CUT", "MSMR-EF"]
     results = {}
     for formulation in formulations:
         solved = solve_model(instance, formulation=formulation, solver_name=solver_name, tee=tee)
