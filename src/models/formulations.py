@@ -15,21 +15,26 @@ def build_model(data: Dict[str, Any] | str | Path, formulation: str = "SO-BB") -
 
     if formulation == "SO-BB":
         return _build_so_bb(model, data)
-    if formulation == "SO-NW-CUT":
+    elif formulation == "SO-NW-CUT":
         return _build_so_nw_cut(model, data)
-    if formulation == "MIN-CUT":
+    elif formulation == "MIN-CUT":
         return _build_min_cut(model, data)
-    if formulation == "MSMR-CUT":
+    elif formulation == "MSMR-CUT":
         return _build_msmr_cut(model, data)
-    if formulation == "SO-NW-BIN-CUT":
+    elif formulation == "SO-NW-BIN-CUT":
         return _build_so_nw_bin_cut(model, data)
-    if formulation == "MIN-BIN-CUT":
+    elif formulation == "MIN-BIN-CUT":
         return _build_min_bin_cut(model, data)
-    if formulation == "MSMR-BIN-CUT":
+    elif formulation == "MSMR-BIN-CUT":
         return _build_msmr_bin_cut(model, data)
-    if formulation == "MSMR-EF":
+    elif formulation == "MSMR-EF":
         return _build_msmr_ef(model, data)
-    raise ValueError(f"Unsupported formulation: {formulation}")
+    elif formulation == "SO-H-NW-CUT":
+        return _build_so_h_nw_cut(model, data)
+    elif formulation == "SO-H-NW-BIN-CUT":
+        return _build_so_h_nw_bin_cut(model, data)
+    else:
+        raise ValueError(f"Unsupported formulation: {formulation}")
 
 def _build_so_bb(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.ConcreteModel:
     """
@@ -283,9 +288,6 @@ def _build_msmr_ef(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Concre
         sum_x = sum(model.x[i, k] for (ii, k) in model.E if ii == i and model.r[ii, k] <= rank_ij)
         return sum_x >= model.x[h, j]
 
-    # We'll create a set of triples (i, j, h) for which the constraint applies.
-    # To avoid huge index sets, we loop over all (i,j) and all (h,j) and add constraints conditionally.
-    # We'll use a ConstraintList for simplicity.
     model.EnvyConstraints = pyo.ConstraintList()
     for (i, j) in model.E:
         for (h, j2) in model.E:
@@ -298,4 +300,170 @@ def _build_msmr_ef(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Concre
         return sum((K - model.r[i, j]) * model.x[i, j] for (i, j) in model.E)
 
     model.Objective = pyo.Objective(rule=objective, sense=pyo.maximize)
+    return model
+
+def _build_so_h_nw_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.ConcreteModel:
+    """
+    SO-H-NW-CUT: Student-Optimal Hungarian Non-Wasteful Cutoff (continuous).
+    For ties under Hungarian policy.
+    Variables: x (binary), t_j (continuous), f_j (binary), d_{ij} (binary).
+    Constraints: (1),(2),(5),(6),(8),(17),(18),(19). Objective (10).
+    """
+    scores = data["scores"]
+    big_m = max(scores.values()) + 2
+    epsilon = 1e-6
+
+    # Cutoff and reject indicator variables
+    model.t = pyo.Var(model.C, within=pyo.NonNegativeReals, bounds=(0, big_m))
+    model.f = pyo.Var(model.C, within=pyo.Binary)
+    # d_{ij}: 1 if student i would be admitted to college j if cutoff decreased by one
+    model.d = pyo.Var(model.E, within=pyo.Binary)
+
+    # --- Cutoff constraints (5) and (6) ---
+    def cutoff_upper(model, i, j):
+        return model.t[j] <= (1 - model.x[i, j]) * (big_m + 1) + model.s[i, j]
+
+    def cutoff_lower(model, i, j):
+        rank_ij = model.r[i, j]
+        prefix = sum(model.x[i, h] for (ii, h) in model.E if ii == i and model.r[ii, h] <= rank_ij)
+        return model.s[i, j] + epsilon <= model.t[j] + prefix * (big_m + 1)
+
+    model.CutoffUpper = pyo.Constraint(model.E, rule=cutoff_upper)
+    model.CutoffLower = pyo.Constraint(model.E, rule=cutoff_lower)
+
+    # --- Constraint (8): cutoff zero if no rejection ---
+    def cutoff_zero_if_no_reject(model, j):
+        return model.t[j] <= model.f[j] * (big_m + 1)
+
+    model.CutoffZeroIfNoReject = pyo.Constraint(model.C, rule=cutoff_zero_if_no_reject)
+
+    # --- Constraint (17): d_{ik} <= 1 - x_{ij} for all i and all j,k with r_{ik} >= r_{ij} ---
+    model.d_blocking_constraint = pyo.ConstraintList()
+    for i in range(data["n"]):
+        pref_i = data["preferences"][i]
+        # For each college j that student applied to, and each k with rank >= rank_ij
+        for rank_idx_j, j in enumerate(pref_i):
+            for rank_idx_k, k in enumerate(pref_i):
+                if rank_idx_k >= rank_idx_j:  # r_{ik} >= r_{ij}
+                    # need (i,j) and (i,k) in E
+                    if (i, j) in model.E and (i, k) in model.E:
+                        model.d_blocking_constraint.add(
+                            model.d[i, k] <= 1 - model.x[i, j]
+                        )
+
+    # --- Constraint (18)
+    def d_cutoff_relation(model, i, j):
+        return model.t[j] - 1 <= (1 - model.d[i, j]) * (big_m + 1) + model.s[i, j]
+
+    model.DCutoffRelation = pyo.Constraint(model.E, rule=d_cutoff_relation)
+
+    # --- Constraint (19)
+    def non_wastefulness(model, j):
+        return model.f[j] * (model.u[j] + 1) <= sum(
+            model.x[i, j2] + model.d[i, j2]
+            for (i, j2) in model.E
+            if j2 == j
+        )
+
+    model.NonWastefulness = pyo.Constraint(model.C, rule=non_wastefulness)
+
+    # --- Objective (10)
+    max_rank = max(model.r[i, j] for (i, j) in model.E)
+    K = max_rank + 1
+
+    def objective(model):
+        return sum((K - model.r[i, j]) * model.x[i, j] for (i, j) in model.E)
+
+    model.Objective = pyo.Objective(rule=objective, sense=pyo.maximize)
+
+    return model
+
+
+def _build_so_h_nw_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.ConcreteModel:
+    """
+    SO-H-NW-BIN-CUT: Student-Optimal Hungarian Non-Wasteful Binary Cutoff.
+    For ties under Hungarian policy.
+    Variables: x (binary), t_j^k (binary), d_{ij} (binary).
+    Constraints: (1),(2),(11),(12),(13),(17),(20),(21). Objective (10).
+    """
+    scores_by_college = _score_lists(data)
+    score_pairs = [(j, score) for j in range(data["m"]) for score in scores_by_college[j]]
+    model.TS = pyo.Set(initialize=score_pairs, dimen=2)
+    model.t = pyo.Var(model.TS, within=pyo.Binary)
+
+    # d_{ij}: 1 if student i would be admitted to college j if cutoff decreased by one
+    model.d = pyo.Var(model.E, within=pyo.Binary)
+
+    # --- Cutoff constraints (11), (12), (13)
+    def cutoff_ge_accept(model, i, j):
+        sc = model.s[i, j]
+        return model.x[i, j] <= model.t[j, sc]
+
+    def monotonicity(model, j):
+        score_list = scores_by_college[j]
+        exprs = []
+        for k in range(len(score_list) - 1):
+            exprs.append(model.t[j, score_list[k]] <= model.t[j, score_list[k + 1]])
+        return exprs
+
+    def envy_rule(model, i, j):
+        rank_ij = model.r[i, j]
+        sum_x = sum(model.x[i, h] for (ii, h) in model.E if ii == i and model.r[ii, h] <= rank_ij)
+        sc = model.s[i, j]
+        return 1 <= sum_x + (1 - model.t[j, sc])
+
+    model.CutoffGeAccept = pyo.Constraint(model.E, rule=cutoff_ge_accept)
+    monotonicity_counter = 0
+    for j in range(data["m"]):
+        for expr in monotonicity(model, j):
+            model.add_component(f"Monotonicity_{j}_{monotonicity_counter}", pyo.Constraint(expr=expr))
+            monotonicity_counter += 1
+    model.Envy = pyo.Constraint(model.E, rule=envy_rule)
+
+    # --- Constraint (17)
+    model.d_blocking_constraint = pyo.ConstraintList()
+    for i in range(data["n"]):
+        pref_i = data["preferences"][i]
+        for rank_idx_j, j in enumerate(pref_i):
+            for rank_idx_k, k in enumerate(pref_i):
+                if rank_idx_k >= rank_idx_j:
+                    if (i, j) in model.E and (i, k) in model.E:
+                        model.d_blocking_constraint.add(
+                            model.d[i, k] <= 1 - model.x[i, j]
+                        )
+
+    # --- Constraint (21)
+    model.d_cutoff_relation_bin = pyo.ConstraintList()
+    for (i, j) in model.E:
+        sc = model.s[i, j]
+        score_list = scores_by_college[j]
+        if sc in score_list:
+            k = score_list.index(sc)
+            if k < len(score_list) - 1:
+                model.d_cutoff_relation_bin.add(
+                    model.d[i, j] <= model.t[j, score_list[k+1]] - model.t[j, sc]
+                )
+
+    # --- Constraint (20)
+    def non_wastefulness_bin(model, j):
+        score_list = scores_by_college[j]
+        if not score_list:
+            return pyo.Constraint.Skip
+        return (1 - model.t[j, score_list[0]]) * (model.u[j] + 1) <= sum(
+            model.x[i, j2] + model.d[i, j2]
+            for (i, j2) in model.E
+            if j2 == j
+        )
+
+    model.NonWastefulnessBin = pyo.Constraint(model.C, rule=non_wastefulness_bin)
+
+    # --- Objective (10)
+    max_rank = max(model.r[i, j] for (i, j) in model.E)
+    K = max_rank + 1
+
+    def objective(model):
+        return sum((K - model.r[i, j]) * model.x[i, j] for (i, j) in model.E)
+
+    model.Objective = pyo.Objective(rule=objective, sense=pyo.maximize)
+
     return model
