@@ -609,6 +609,17 @@ def _build_so_c_nw_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> py
             else:
                 prev_score = score_list[k-1]
                 model.dbar_cutoff_bin.add(model.dbar[i, j] <= model.t[j, sc] - model.t[j, prev_score])
+    
+    # --- Non-wastefulness constraint (14) equivalent for Chilean
+    # --- Not in the paper
+    def chilean_lower_bound(model, j):
+        score_list = scores_by_college[j]
+        if not score_list:
+            return pyo.Constraint.Skip
+        return (1 - model.t[j, score_list[0]]) * model.u[j] <= sum(
+            model.x[i, j2] for (i, j2) in model.E if j2 == j
+        )
+    model.ChileanLowerBound = pyo.Constraint(model.C, rule=chilean_lower_bound)
 
     # --- Objective (10)
     max_rank = max(model.r[i, j] for (i, j) in model.E)
