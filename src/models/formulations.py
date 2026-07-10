@@ -478,7 +478,7 @@ def _build_so_c_nw_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Co
     SO-C-NW-CUT: Student-Optimal Chilean Non-Wasteful Cutoff (continuous).
     Chilean permissive policy: last tied group is all accepted, possibly violating quota.
     Variables: x (binary), t_j (continuous), f_j (binary), dbar_{ij} (binary).
-    Constraints: (1),(2),(5),(6),(7),(8),(22),(23),(24). Objective (10) max.
+    Constraints: (1),(5),(6),(7),(8),(22),(23),(24). Objective (10) max.
     """
     scores = data["scores"]
     big_m = max(scores.values()) + 2
@@ -539,6 +539,9 @@ def _build_so_c_nw_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Co
 
     model.Objective = pyo.Objective(rule=objective, sense=pyo.maximize)
 
+    # --- Deactivate capacity constraint (2)
+    model.Capacity.deactivate()
+
     return model
 
 def _build_so_c_nw_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.ConcreteModel:
@@ -546,7 +549,7 @@ def _build_so_c_nw_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> py
     SO-C-NW-BIN-CUT: Student-Optimal Chilean Non-Wasteful Binary Cutoff.
     Chilean permissive policy.
     Variables: x (binary), t_j^k (binary), dbar_{ij} (binary).
-    Constraints: (1),(2),(11),(12),(13),(22),(24),(25). Objective (10) max.
+    Constraints: (1),(11),(12),(13),(22),(24),(25). Objective (10) max.
     """
     scores_by_college = _score_lists(data)
     score_pairs = [(j, score) for j in range(data["m"]) for score in scores_by_college[j]]
@@ -615,5 +618,8 @@ def _build_so_c_nw_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> py
         return sum((K - model.r[i, j]) * model.x[i, j] for (i, j) in model.E)
 
     model.Objective = pyo.Objective(rule=objective, sense=pyo.maximize)
+
+    # --- Deactivate capacity constraint (2)
+    model.Capacity.deactivate()
 
     return model
