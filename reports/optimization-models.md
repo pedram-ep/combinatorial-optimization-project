@@ -239,7 +239,7 @@ $$
 \end{aligned}
 $$
 
-## بخش ۳
+## بخش ۳ (رتبه‌های مساوی با سیاست مجارستان)
 
 ### ۹. فرمول‌بندی نمره برش پیوسته با قیدهای عدم اسراف مستقیم - سیاست مجارستان (SO-H-NW-CUT)
 
@@ -307,5 +307,77 @@ $$
 & d_{ij} \leq t_j^{k+1} - t_j^k && \forall (a_i,c_j)\in E,\ s_{ij}=s_j^k\\
 & (1-t_j^1)\cdot (u_j + 1) \leq \sum_{(a_i,c_j)\in E} (x_{ij} + d_{ij}) && \forall c_j \in C\\
 & x_{ij}\in\{0,1\},\quad t_j^k\in\{0,1\},\quad d_{ij}\in\{0,1\}
+\end{aligned}
+$$
+
+## بخش ۴ (مقایسه سیاست‌ها برای رتبه‌های مساوی)
+
+### ۱۱. فرمول‌بندی نمره برش پیوسته با قیدهای عدم اسراف مستقیم - سیاست شیلی (SO-C-NW-CUT)
+
+$$
+\begin{aligned}
+\textbf{Sets:}\quad
+& A=\{a_1,\dots,a_n\},\quad C=\{c_1,\dots,c_m\},\quad E \subseteq A \times C\\[4pt]
+\textbf{Parameters:}\quad
+& u_j,\ r_{ij},\ s_{ij} && \text{as above}\\
+& \bar{s},\ \varepsilon && \text{as above}\\
+& K && \text{a sufficiently large constant}\\[4pt]
+\textbf{Variables:}\quad
+& x_{ij}\in\{0,1\} && \forall (a_i,c_j)\in E\\
+& t_j \in \mathbb{R}_{\ge 0} && \forall c_j \in C\\
+& f_j \in \{0,1\} && \forall c_j \in C \quad \text{(1 if } c_j \text{ is essentially full)}\\
+& \bar{d}_{ij}\in\{0,1\} && \forall (a_i,c_j)\in E \quad \text{(1 if } a_i \text{ would be rejected if cutoff increased by one)}
+\end{aligned}
+$$
+
+$$
+\begin{aligned}
+\max \quad & \sum_{(a_i,c_j)\in E} (K - r_{ij})\, x_{ij}\\[4pt]
+\text{s.t.}\quad
+& \sum_{j:(a_i,c_j)\in E} x_{ij} \leq 1 && \forall a_i \in A\\
+& \sum_{i:(a_i,c_j)\in E} x_{ij} \leq u_j && \forall c_j \in C\\
+& t_j \leq (1-x_{ij})\cdot(\bar{s}+1) + s_{ij} && \forall (a_i,c_j)\in E\\
+& s_{ij} + \varepsilon \leq t_j + \Big(\sum_{k:\,r_{ik}\le r_{ij}} x_{ik}\Big)\cdot(\bar{s}+1) && \forall (a_i,c_j)\in E\\
+& f_j \cdot u_j \leq \sum_{i:(a_i,c_j)\in E} x_{ij} && \forall c_j \in C\\
+& t_j \leq f_j\cdot(\bar{s}+1) && \forall c_j \in C\\
+& \bar{d}_{ij} \leq x_{ij} && \forall (a_i,c_j)\in E\\
+& (\bar{d}_{ij} - 1)\cdot(\bar{s}+1) + s_{ij} \leq t_j && \forall (a_i,c_j)\in E\\
+& \sum_{(a_i,c_j)\in E} (x_{ij} - \bar{d}_{ij}) \leq u_j - 1 && \forall c_j \in C\\
+& x_{ij}\in\{0,1\},\quad t_j \ge 0,\quad f_j\in\{0,1\},\quad \bar{d}_{ij}\in\{0,1\}
+\end{aligned}
+$$
+
+---
+
+### ۱۲. فرمول‌بندی نمره برش دودویی با قیدهای عدم اسراف مستقیم - سیاست شیلی (SO-C-NW-BIN-CUT)
+
+$$
+\begin{aligned}
+\textbf{Sets:}\quad
+& A=\{a_1,\dots,a_n\},\quad C=\{c_1,\dots,c_m\},\quad E \subseteq A \times C\\
+& S_j = \{s_{ij} : (a_i,c_j)\in E\} = \{s_j^1, s_j^2, \dots, s_j^{m_j}\},\quad s_j^1 < s_j^2 < \dots < s_j^{m_j} && \forall c_j \in C\\[4pt]
+\textbf{Parameters:}\quad
+& u_j,\ r_{ij},\ s_{ij} && \text{as above}\\
+& K && \text{a sufficiently large constant}\\[4pt]
+\textbf{Variables:}\quad
+& x_{ij}\in\{0,1\} && \forall (a_i,c_j)\in E\\
+& t_j^k \in \{0,1\} && \forall c_j \in C,\ k=1,\dots,m_j \quad (t_j^k=0 \Leftrightarrow \text{cutoff of } c_j > s_j^k)\\
+& \bar{d}_{ij}\in\{0,1\} && \forall (a_i,c_j)\in E \quad \text{(1 if } a_i \text{ would be rejected if cutoff increased by one)}
+\end{aligned}
+$$
+
+$$
+\begin{aligned}
+\max \quad & \sum_{(a_i,c_j)\in E} (K - r_{ij})\, x_{ij}\\[4pt]
+\text{s.t.}\quad
+& \sum_{j:(a_i,c_j)\in E} x_{ij} \leq 1 && \forall a_i \in A\\
+& \sum_{i:(a_i,c_j)\in E} x_{ij} \leq u_j && \forall c_j \in C\\
+& x_{ij} \leq t_j^k && \forall (a_i,c_j)\in E,\ s_{ij}=s_j^k\\
+& t_j^k \leq t_j^{k+1} && \forall c_j \in C,\ k=1,\dots,m_j-1\\
+& 1 \leq \sum_{h:\,r_{ih}\le r_{ij}} x_{ih} + (1-t_j^k) && \forall (a_i,c_j)\in E,\ s_{ij}=s_j^k\\
+& \bar{d}_{ij} \leq x_{ij} && \forall (a_i,c_j)\in E\\
+& \bar{d}_{ij} \leq t_j^k - t_j^{k-1} && \forall (a_i,c_j)\in E,\ s_{ij}=s_j^k \quad (\text{with } t_j^0 = 0)\\
+& \sum_{(a_i,c_j)\in E} (x_{ij} - \bar{d}_{ij}) \leq u_j - 1 && \forall c_j \in C\\
+& x_{ij}\in\{0,1\},\quad t_j^k\in\{0,1\},\quad \bar{d}_{ij}\in\{0,1\}
 \end{aligned}
 $$
