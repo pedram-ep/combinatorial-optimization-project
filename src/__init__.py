@@ -8,6 +8,8 @@ from .utils import (
     solve_and_summarize_all,
     display_solution,
     get_model_stats,
+    break_ties_randomly,
+    compute_policy_metrics,
 )
 
 __all__ = [
@@ -21,4 +23,6 @@ __all__ = [
     "solve_and_summarize_all",
     "display_solution",
     "get_model_stats",
+    "break_ties_randomly",
+    "compute_policy_metrics",
 ]
