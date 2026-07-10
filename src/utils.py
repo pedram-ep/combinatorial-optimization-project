@@ -1,4 +1,5 @@
 from pathlib import Path
+from random import random
 from typing import Any, Dict, Iterable, List
 import pyomo.environ as pyo
 import tempfile
@@ -166,3 +167,12 @@ def get_model_stats(model):
         'num_constraints': num_constraints,
         'size_kb': size_kb,
     }
+
+def break_ties_randomly(data):
+    import copy
+    new_data = copy.deepcopy(data)
+    new_scores = {}
+    for (i,j), score in data['scores'].items():
+        new_scores[(i,j)] = score + random.random() * 1e-5
+    new_data['scores'] = new_scores
+    return new_data
