@@ -213,8 +213,6 @@ def compute_policy_metrics(model, data):
 
     avg_cutoffs = sum(cutoffs) / len(cutoffs) if cutoffs else 0
 
-    print(f"  -> size={size}, avg_rank={avg_rank:.4f}, avg_cutoffs={avg_cutoffs:.4f}, rejections={rejections}")
-
     return {
         'size': size,
         'avg_rank': avg_rank,
