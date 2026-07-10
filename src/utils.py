@@ -176,3 +176,53 @@ def break_ties_randomly(data):
         new_scores[(i,j)] = score + random.random() * 1e-5
     new_data['scores'] = new_scores
     return new_data
+
+def compute_policy_metrics(model, data):
+    """
+    Compute metrics for a given model and data, similar to paper's table 4.
+    Returns a dict with:
+        size:        number of students assigned
+        avg_rank:    average rank of assigned students
+        avg_cutoffs: average cutoff scores for colleges (if applicable)
+        rejections:  number of students not assigned
+    """
+    # 1. Size & Ranks
+    size = 0
+    rank_sum = 0
+    for (i, j) in model.E:
+        if pyo.value(model.x[i, j]) > 0.5:
+            size += 1
+            rank_sum += model.r[i, j].value
+
+    avg_rank = rank_sum / size if size > 0 else 0
+
+    # 2. Rejections
+    total_apps = len(data['scores'])
+    rejections = total_apps - size
+
+    # 3. Average Cutoffs (for binary cutoff models)
+    scores_by_college = {}
+    for (i, j), val in data['scores'].items():
+        scores_by_college.setdefault(j, set()).add(val)
+    
+    for j in scores_by_college:
+        scores_by_college[j] = sorted(scores_by_college[j])
+
+    cutoffs = []
+    for j in range(data['m']):
+        cutoff = 0
+        if j in scores_by_college and scores_by_college[j]:
+            for s in reversed(scores_by_college[j]):
+                if pyo.value(model.t[j, s]) > 0.5:
+                    cutoff = s
+                    break
+        cutoffs.append(cutoff)
+    
+    avg_cutoffs = sum(cutoffs) / len(cutoffs) if cutoffs else 0
+
+    return {
+        'size': size,
+        'avg_rank': avg_rank,
+        'avg_cutoffs': avg_cutoffs,
+        'rejections': rejections
+    }
