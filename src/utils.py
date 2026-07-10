@@ -1,5 +1,4 @@
 from pathlib import Path
-from random import random
 from typing import Any, Dict, Iterable, List
 import pyomo.environ as pyo
 import tempfile
@@ -169,7 +168,7 @@ def get_model_stats(model):
     }
 
 def break_ties_randomly(data):
-    import copy
+    import copy, random
     new_data = copy.deepcopy(data)
     new_scores = {}
     for (i,j), score in data['scores'].items():
@@ -184,7 +183,7 @@ def compute_policy_metrics(model, data):
         size:        number of students assigned
         avg_rank:    average rank of assigned students
         avg_cutoffs: average cutoff scores for colleges (if applicable)
-        rejections:  number of students not assigned
+        rejections:  number of applications rejected (student not matched)
     """
     # 1. Size & Ranks
     size = 0
@@ -192,33 +191,29 @@ def compute_policy_metrics(model, data):
     for (i, j) in model.E:
         if pyo.value(model.x[i, j]) > 0.5:
             size += 1
-            rank_sum += model.r[i, j].value
+            rank_sum += pyo.value(model.r[i, j])
 
     avg_rank = rank_sum / size if size > 0 else 0
 
-    # 2. Rejections
-    total_apps = len(data['scores'])
-    rejections = total_apps - size
+    # 2. Rejections: total students - matched students
+    rejections = data['n'] - size
 
-    # 3. Average Cutoffs (for binary cutoff models)
-    scores_by_college = {}
-    for (i, j), val in data['scores'].items():
-        scores_by_college.setdefault(j, set()).add(val)
-    
-    for j in scores_by_college:
-        scores_by_college[j] = sorted(scores_by_college[j])
-
+    # 3. Average Cutoffs
     cutoffs = []
     for j in range(data['m']):
-        cutoff = 0
-        if j in scores_by_college and scores_by_college[j]:
-            for s in reversed(scores_by_college[j]):
-                if pyo.value(model.t[j, s]) > 0.5:
-                    cutoff = s
-                    break
+        assigned_scores = []
+        for (i, col) in model.E:
+            if col == j and pyo.value(model.x[i, j]) > 0.5:
+                assigned_scores.append(data['scores'][(i, j)])
+        if assigned_scores:
+            cutoff = min(assigned_scores)
+        else:
+            cutoff = 0
         cutoffs.append(cutoff)
-    
+
     avg_cutoffs = sum(cutoffs) / len(cutoffs) if cutoffs else 0
+
+    print(f"  -> size={size}, avg_rank={avg_rank:.4f}, avg_cutoffs={avg_cutoffs:.4f}, rejections={rejections}")
 
     return {
         'size': size,
