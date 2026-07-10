@@ -33,6 +33,10 @@ def build_model(data: Dict[str, Any] | str | Path, formulation: str = "SO-BB") -
         return _build_so_h_nw_cut(model, data)
     elif formulation == "SO-H-NW-BIN-CUT":
         return _build_so_h_nw_bin_cut(model, data)
+    elif formulation == "SO-C-NW-CUT":
+        return _build_so_c_nw_cut(model, data)
+    elif formulation == "SO-C-NW-BIN-CUT":
+        return _build_so_c_nw_bin_cut(model, data)
     else:
         raise ValueError(f"Unsupported formulation: {formulation}")
 
@@ -456,6 +460,152 @@ def _build_so_h_nw_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> py
         )
 
     model.NonWastefulnessBin = pyo.Constraint(model.C, rule=non_wastefulness_bin)
+
+    # --- Objective (10)
+    max_rank = max(model.r[i, j] for (i, j) in model.E)
+    K = max_rank + 1
+
+    def objective(model):
+        return sum((K - model.r[i, j]) * model.x[i, j] for (i, j) in model.E)
+
+    model.Objective = pyo.Objective(rule=objective, sense=pyo.maximize)
+
+    return model
+
+
+def _build_so_c_nw_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.ConcreteModel:
+    """
+    SO-C-NW-CUT: Student-Optimal Chilean Non-Wasteful Cutoff (continuous).
+    Chilean permissive policy: last tied group is all accepted, possibly violating quota.
+    Variables: x (binary), t_j (continuous), f_j (binary), dbar_{ij} (binary).
+    Constraints: (1),(2),(5),(6),(7),(8),(22),(23),(24). Objective (10) max.
+    """
+    scores = data["scores"]
+    big_m = max(scores.values()) + 2
+    epsilon = 1e-6
+
+    # Cutoff and reject indicator variables (f_j)
+    model.t = pyo.Var(model.C, within=pyo.NonNegativeReals, bounds=(0, big_m))
+    model.f = pyo.Var(model.C, within=pyo.Binary)
+
+    model.dbar = pyo.Var(model.E, within=pyo.Binary)
+
+    # --- Constraints (5) and (6)
+    def cutoff_upper(model, i, j):
+        return model.t[j] <= (1 - model.x[i, j]) * (big_m + 1) + model.s[i, j]
+
+    def cutoff_lower(model, i, j):
+        rank_ij = model.r[i, j]
+        prefix = sum(model.x[i, h] for (ii, h) in model.E if ii == i and model.r[ii, h] <= rank_ij)
+        return model.s[i, j] + epsilon <= model.t[j] + prefix * (big_m + 1)
+
+    model.CutoffUpper = pyo.Constraint(model.E, rule=cutoff_upper)
+    model.CutoffLower = pyo.Constraint(model.E, rule=cutoff_lower)
+
+    # --- Constraints (7) and (8)
+    def reject_indicator(model, j):
+        return model.u[j] * model.f[j] <= sum(model.x[i, j2] for (i, j2) in model.E if j2 == j)
+
+    def cutoff_zero_if_no_reject(model, j):
+        return model.t[j] <= model.f[j] * (big_m + 1)
+
+    model.RejectIndicator = pyo.Constraint(model.C, rule=reject_indicator)
+    model.CutoffZeroIfNoReject = pyo.Constraint(model.C, rule=cutoff_zero_if_no_reject)
+
+    # --- Constraint (22)
+    def dbar_le_x(model, i, j):
+        return model.dbar[i, j] <= model.x[i, j]
+
+    model.DbarLeX = pyo.Constraint(model.E, rule=dbar_le_x)
+
+    # --- Constraint (23)
+    def dbar_cutoff_relation(model, i, j):
+        return (model.dbar[i, j] - 1) * (big_m + 1) + model.s[i, j] <= model.t[j]
+
+    model.DbarCutoffRelation = pyo.Constraint(model.E, rule=dbar_cutoff_relation)
+
+    # --- Constraint (24)
+    def non_wastefulness_chile(model, j):
+        return sum(model.x[i, j2] - model.dbar[i, j2] for (i, j2) in model.E if j2 == j) <= model.u[j] - 1
+
+    model.NonWastefulnessChile = pyo.Constraint(model.C, rule=non_wastefulness_chile)
+
+    # --- Objective (10)
+    max_rank = max(model.r[i, j] for (i, j) in model.E)
+    K = max_rank + 1
+
+    def objective(model):
+        return sum((K - model.r[i, j]) * model.x[i, j] for (i, j) in model.E)
+
+    model.Objective = pyo.Objective(rule=objective, sense=pyo.maximize)
+
+    return model
+
+def _build_so_c_nw_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.ConcreteModel:
+    """
+    SO-C-NW-BIN-CUT: Student-Optimal Chilean Non-Wasteful Binary Cutoff.
+    Chilean permissive policy.
+    Variables: x (binary), t_j^k (binary), dbar_{ij} (binary).
+    Constraints: (1),(2),(11),(12),(13),(22),(24),(25). Objective (10) max.
+    """
+    scores_by_college = _score_lists(data)
+    score_pairs = [(j, score) for j in range(data["m"]) for score in scores_by_college[j]]
+    model.TS = pyo.Set(initialize=score_pairs, dimen=2)
+    model.t = pyo.Var(model.TS, within=pyo.Binary)
+
+    # dbar_{ij}
+    model.dbar = pyo.Var(model.E, within=pyo.Binary)
+
+    # --- Constraints (11), (12), (13)
+    def cutoff_ge_accept(model, i, j):
+        sc = model.s[i, j]
+        return model.x[i, j] <= model.t[j, sc]
+
+    def monotonicity(model, j):
+        score_list = scores_by_college[j]
+        exprs = []
+        for k in range(len(score_list) - 1):
+            exprs.append(model.t[j, score_list[k]] <= model.t[j, score_list[k + 1]])
+        return exprs
+
+    def envy_rule(model, i, j):
+        rank_ij = model.r[i, j]
+        sum_x = sum(model.x[i, h] for (ii, h) in model.E if ii == i and model.r[ii, h] <= rank_ij)
+        sc = model.s[i, j]
+        return 1 <= sum_x + (1 - model.t[j, sc])
+
+    model.CutoffGeAccept = pyo.Constraint(model.E, rule=cutoff_ge_accept)
+    monotonicity_counter = 0
+    for j in range(data["m"]):
+        for expr in monotonicity(model, j):
+            model.add_component(f"Monotonicity_{j}_{monotonicity_counter}", pyo.Constraint(expr=expr))
+            monotonicity_counter += 1
+    model.Envy = pyo.Constraint(model.E, rule=envy_rule)
+
+    # --- Constraint (22)
+    def dbar_le_x(model, i, j):
+        return model.dbar[i, j] <= model.x[i, j]
+
+    model.DbarLeX = pyo.Constraint(model.E, rule=dbar_le_x)
+
+    # --- Constraint (24)
+    def non_wastefulness_chile_bin(model, j):
+        return sum(model.x[i, j2] - model.dbar[i, j2] for (i, j2) in model.E if j2 == j) <= model.u[j] - 1
+
+    model.NonWastefulnessChileBin = pyo.Constraint(model.C, rule=non_wastefulness_chile_bin)
+
+    # --- Constraint (25)
+    model.dbar_cutoff_bin = pyo.ConstraintList()
+    for (i, j) in model.E:
+        sc = model.s[i, j]
+        score_list = scores_by_college[j]
+        if sc in score_list:
+            k = score_list.index(sc)
+            if k == 0:
+                model.dbar_cutoff_bin.add(model.dbar[i, j] <= model.t[j, sc])
+            else:
+                prev_score = score_list[k-1]
+                model.dbar_cutoff_bin.add(model.dbar[i, j] <= model.t[j, sc] - model.t[j, prev_score])
 
     # --- Objective (10)
     max_rank = max(model.r[i, j] for (i, j) in model.E)
