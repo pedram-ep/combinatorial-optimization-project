@@ -65,13 +65,14 @@ def print_summary(
 def solve_and_summarize_all(
         data: Dict[str, Any] | str | Path,
         solver_name: str = "cplex",
-        tee: bool = False
+        tee: bool = False,
+        formulations: List[str] | None = None
         ) -> List[Dict[str, Any]]:
     """
     Convenience wrapper to solve all formulations and return comparable summaries.
     """
     from .solver import solve_all_models
-    return summarize_results(solve_all_models(data, solver_name=solver_name, tee=tee))
+    return summarize_results(solve_all_models(data, solver_name=solver_name, tee=tee, formulations=formulations))
 
 def compute_metrics(assignment, data):
     """Compute fairness and satisfaction metrics from an assignment."""
@@ -164,4 +165,57 @@ def get_model_stats(model):
         'num_vars': num_vars,
         'num_constraints': num_constraints,
         'size_kb': size_kb,
+    }
+
+def break_ties_randomly(data):
+    import copy, random
+    new_data = copy.deepcopy(data)
+    new_scores = {}
+    for (i,j), score in data['scores'].items():
+        new_scores[(i,j)] = score + random.random() * 1e-5
+    new_data['scores'] = new_scores
+    return new_data
+
+def compute_policy_metrics(model, data):
+    """
+    Compute metrics for a given model and data, similar to paper's table 4.
+    Returns a dict with:
+        size:        number of students assigned
+        avg_rank:    average rank of assigned students
+        avg_cutoffs: average cutoff scores for colleges (if applicable)
+        rejections:  number of applications rejected (student not matched)
+    """
+    # 1. Size & Ranks
+    size = 0
+    rank_sum = 0
+    for (i, j) in model.E:
+        if pyo.value(model.x[i, j]) > 0.5:
+            size += 1
+            rank_sum += pyo.value(model.r[i, j])
+
+    avg_rank = rank_sum / size if size > 0 else 0
+
+    # 2. Rejections: total students - matched students
+    rejections = data['n'] - size
+
+    # 3. Average Cutoffs
+    cutoffs = []
+    for j in range(data['m']):
+        assigned_scores = []
+        for (i, col) in model.E:
+            if col == j and pyo.value(model.x[i, j]) > 0.5:
+                assigned_scores.append(data['scores'][(i, j)])
+        if assigned_scores:
+            cutoff = min(assigned_scores)
+        else:
+            cutoff = 0
+        cutoffs.append(cutoff)
+
+    avg_cutoffs = sum(cutoffs) / len(cutoffs) if cutoffs else 0
+
+    return {
+        'size': size,
+        'avg_rank': avg_rank,
+        'avg_cutoffs': avg_cutoffs,
+        'rejections': rejections
     }
