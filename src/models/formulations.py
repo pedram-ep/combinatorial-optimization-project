@@ -44,6 +44,7 @@ def _build_so_bb(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Concrete
     """
     SO-BB: Student-Optimal Baïou-Balinski formulation.
     """
+    # --- Baïou-Balinski stability constraints
     def baiou_balinski_rule(model, i, j):
         rank_ij = model.r[i, j]
         preferred_or_equal = sum(
@@ -60,6 +61,7 @@ def _build_so_bb(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Concrete
 
     model.StabilityConstraint = pyo.Constraint(model.E, rule=baiou_balinski_rule)
 
+    # --- Objective
     def objective(model):
         return sum(model.r[i, j] * model.x[i, j] for (i, j) in model.E)
 
@@ -68,6 +70,7 @@ def _build_so_bb(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Concrete
 
 
 def _build_so_nw_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.ConcreteModel:
+    # --- Cutoff variables and parameters
     scores = data["scores"]
     big_m = max(scores.values()) + 2
     epsilon = 1e-6
@@ -75,9 +78,10 @@ def _build_so_nw_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Conc
     model.t = pyo.Var(model.C, within=pyo.NonNegativeReals, bounds=(0, big_m))
     model.f = pyo.Var(model.C, within=pyo.Binary)
 
+    # --- Cutoff constraints (5) and (6)
     def cutoff_upper(model, i, j):
         return model.t[j] <= (1 - model.x[i, j]) * (big_m + 1) + model.s[i, j]
-
+    
     def cutoff_lower(model, i, j):
         rank_ij = model.r[i, j]
         prefix = sum(model.x[i, h] for (ii, h) in model.E if ii == i and model.r[ii, h] <= rank_ij)
@@ -85,7 +89,7 @@ def _build_so_nw_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Conc
 
     def reject_indicator(model, j):
         return model.u[j] * model.f[j] <= sum(model.x[i, j2] for (i, j2) in model.E if j2 == j)
-
+    
     def cutoff_zero_if_no_reject(model, j):
         return model.t[j] <= model.f[j] * (big_m + 1)
 
@@ -94,6 +98,7 @@ def _build_so_nw_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Conc
     model.RejectIndicator = pyo.Constraint(model.C, rule=reject_indicator)
     model.CutoffZeroIfNoReject = pyo.Constraint(model.C, rule=cutoff_zero_if_no_reject)
 
+    # --- Objective
     def objective(model):
         return sum(model.r[i, j] * model.x[i, j] for (i, j) in model.E)
 
@@ -102,12 +107,14 @@ def _build_so_nw_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Conc
 
 
 def _build_min_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.ConcreteModel:
+    # --- Cutoff variables and parameters
     scores = data["scores"]
     big_m = max(scores.values()) + 2
     epsilon = 1e-6
 
     model.t = pyo.Var(model.C, within=pyo.NonNegativeReals, bounds=(0, big_m))
 
+    # --- Cutoff constraints (5) and (6)
     def cutoff_upper(model, i, j):
         return model.t[j] <= (1 - model.x[i, j]) * (big_m + 1) + model.s[i, j]
 
@@ -119,6 +126,7 @@ def _build_min_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Concre
     model.CutoffUpper = pyo.Constraint(model.E, rule=cutoff_upper)
     model.CutoffLower = pyo.Constraint(model.E, rule=cutoff_lower)
 
+    # --- Objective
     def objective(model):
         return sum(model.t[j] for j in model.C)
 
@@ -127,6 +135,7 @@ def _build_min_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Concre
 
 
 def _build_msmr_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.ConcreteModel:
+    # --- Cutoff variables and parameters
     scores = data["scores"]
     big_m = max(scores.values()) + 2
     epsilon = 1e-6
@@ -135,17 +144,21 @@ def _build_msmr_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Concr
 
     model.t = pyo.Var(model.C, within=pyo.NonNegativeReals, bounds=(0, big_m))
 
+    # --- Cutoff constraints (5)
     def cutoff_upper(model, i, j):
         return model.t[j] <= (1 - model.x[i, j]) * (big_m + 1) + model.s[i, j]
 
+    model.CutoffUpper = pyo.Constraint(model.E, rule=cutoff_upper)
+
+    # -- Cutoff lower constraints (6)
     def cutoff_lower(model, i, j):
         rank_ij = model.r[i, j]
         prefix = sum(model.x[i, h] for (ii, h) in model.E if ii == i and model.r[ii, h] <= rank_ij)
         return model.s[i, j] + epsilon <= model.t[j] + prefix * (big_m + 1)
 
-    model.CutoffUpper = pyo.Constraint(model.E, rule=cutoff_upper)
     model.CutoffLower = pyo.Constraint(model.E, rule=cutoff_lower)
 
+    # --- Objective
     def objective(model):
         return sum((K - model.r[i, j]) * model.x[i, j] for (i, j) in model.E)
 
@@ -154,15 +167,20 @@ def _build_msmr_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Concr
 
 
 def _build_so_nw_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.ConcreteModel:
+    # --- Cutoff variables and parameters
     scores_by_college = _score_lists(data)
     score_pairs = [(j, score) for j in range(data["m"]) for score in scores_by_college[j]]
     model.TS = pyo.Set(initialize=score_pairs, dimen=2)
     model.t = pyo.Var(model.TS, within=pyo.Binary)
 
+    # --- Cutoff constraints (5) and (6)
     def cutoff_ge_accept(model, i, j):
         sc = model.s[i, j]
         return model.x[i, j] <= model.t[j, sc]
+    
+    model.CutoffGeAccept = pyo.Constraint(model.E, rule=cutoff_ge_accept)
 
+    # --- Monotonicity constraints (7)
     def monotonicity(model, j):
         score_list = scores_by_college[j]
         exprs = []
@@ -170,27 +188,31 @@ def _build_so_nw_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.
             exprs.append(model.t[j, score_list[k]] <= model.t[j, score_list[k + 1]])
         return exprs
 
+    monotonicity_counter = 0
+    for j in range(data["m"]):
+        for expr in monotonicity(model, j):
+            model.add_component(f"Monotonicity_{j}_{monotonicity_counter}", pyo.Constraint(expr=expr))
+            monotonicity_counter += 1
+
+    # --- Envy constraints (8)
     def envy_rule(model, i, j):
         rank_ij = model.r[i, j]
         sum_x = sum(model.x[i, h] for (ii, h) in model.E if ii == i and model.r[ii, h] <= rank_ij)
         sc = model.s[i, j]
         return 1 <= sum_x + (1 - model.t[j, sc])
+    
+    model.Envy = pyo.Constraint(model.E, rule=envy_rule)
 
+    # --- Lower bound constraints (9)
     def lower_bound_rule(model, j):
         score_list = scores_by_college[j]
         if not score_list:
             return pyo.Constraint.Skip
         return (1 - model.t[j, score_list[0]]) * model.u[j] <= sum(model.x[i, j2] for (i, j2) in model.E if j2 == j)
 
-    model.CutoffGeAccept = pyo.Constraint(model.E, rule=cutoff_ge_accept)
-    monotonicity_counter = 0
-    for j in range(data["m"]):
-        for expr in monotonicity(model, j):
-            model.add_component(f"Monotonicity_{j}_{monotonicity_counter}", pyo.Constraint(expr=expr))
-            monotonicity_counter += 1
-    model.Envy = pyo.Constraint(model.E, rule=envy_rule)
     model.LowerBound = pyo.Constraint(model.C, rule=lower_bound_rule)
 
+    # --- Objective
     def objective(model):
         return sum(model.r[i, j] * model.x[i, j] for (i, j) in model.E)
 
