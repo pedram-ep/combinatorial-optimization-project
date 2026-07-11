@@ -220,15 +220,20 @@ def _build_so_nw_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.
     return model
 
 def _build_min_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.ConcreteModel:
+    # --- Cutoff variables and parameters
     scores_by_college = _score_lists(data)
     score_pairs = [(j, score) for j in range(data["m"]) for score in scores_by_college[j]]
     model.TS = pyo.Set(initialize=score_pairs, dimen=2)
     model.t = pyo.Var(model.TS, within=pyo.Binary)
 
+    # --- Cutoff constraints (5) and (6)
     def cutoff_ge_accept(model, i, j):
         sc = model.s[i, j]
         return model.x[i, j] <= model.t[j, sc]
 
+    model.CutoffGeAccept = pyo.Constraint(model.E, rule=cutoff_ge_accept)
+
+    # --- Monotonicity constraints (7)
     def monotonicity(model, j):
         score_list = scores_by_college[j]
         exprs = []
@@ -236,20 +241,22 @@ def _build_min_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Co
             exprs.append(model.t[j, score_list[k]] <= model.t[j, score_list[k + 1]])
         return exprs
 
+    monotonicity_counter = 0
+    for j in range(data["m"]):
+        for expr in monotonicity(model, j):
+            model.add_component(f"Monotonicity_{j}_{monotonicity_counter}", pyo.Constraint(expr=expr))
+            monotonicity_counter += 1
+
+    # --- Envy constraints (8)
     def envy_rule(model, i, j):
         rank_ij = model.r[i, j]
         sum_x = sum(model.x[i, h] for (ii, h) in model.E if ii == i and model.r[ii, h] <= rank_ij)
         sc = model.s[i, j]
         return 1 <= sum_x + (1 - model.t[j, sc])
 
-    model.CutoffGeAccept = pyo.Constraint(model.E, rule=cutoff_ge_accept)
-    monotonicity_counter = 0
-    for j in range(data["m"]):
-        for expr in monotonicity(model, j):
-            model.add_component(f"Monotonicity_{j}_{monotonicity_counter}", pyo.Constraint(expr=expr))
-            monotonicity_counter += 1
     model.Envy = pyo.Constraint(model.E, rule=envy_rule)
 
+    # --- Objective
     def objective(model):
         return sum(model.t[j, sc] for (j, sc) in model.TS)
 
@@ -258,6 +265,7 @@ def _build_min_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Co
 
 
 def _build_msmr_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.ConcreteModel:
+    # --- Cutoff variables and parameters
     max_rank = max(model.r[i, j] for (i, j) in model.E)
     K = max_rank + 1
 
@@ -266,31 +274,37 @@ def _build_msmr_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.C
     model.TS = pyo.Set(initialize=score_pairs, dimen=2)
     model.t = pyo.Var(model.TS, within=pyo.Binary)
 
+    # --- Cutoff constraints (5) and (6)
     def cutoff_ge_accept(model, i, j):
         sc = model.s[i, j]
         return model.x[i, j] <= model.t[j, sc]
 
+    model.CutoffGeAccept = pyo.Constraint(model.E, rule=cutoff_ge_accept)
+
+    # --- Monotonicity constraints (7)
     def monotonicity(model, j):
         score_list = scores_by_college[j]
         exprs = []
         for k in range(len(score_list) - 1):
             exprs.append(model.t[j, score_list[k]] <= model.t[j, score_list[k + 1]])
         return exprs
+    
+    monotonicity_counter = 0
+    for j in range(data["m"]):
+        for expr in monotonicity(model, j):
+            model.add_component(f"Monotonicity_{j}_{monotonicity_counter}", pyo.Constraint(expr=expr))
+            monotonicity_counter += 1
 
+    # --- Envy constraints (8)
     def envy_rule(model, i, j):
         rank_ij = model.r[i, j]
         sum_x = sum(model.x[i, h] for (ii, h) in model.E if ii == i and model.r[ii, h] <= rank_ij)
         sc = model.s[i, j]
         return 1 <= sum_x + (1 - model.t[j, sc])
 
-    model.CutoffGeAccept = pyo.Constraint(model.E, rule=cutoff_ge_accept)
-    monotonicity_counter = 0
-    for j in range(data["m"]):
-        for expr in monotonicity(model, j):
-            model.add_component(f"Monotonicity_{j}_{monotonicity_counter}", pyo.Constraint(expr=expr))
-            monotonicity_counter += 1
     model.Envy = pyo.Constraint(model.E, rule=envy_rule)
 
+    # --- Objective
     def objective(model):
         return sum((K - model.r[i, j]) * model.x[i, j] for (i, j) in model.E)
 
@@ -302,14 +316,12 @@ def _build_msmr_ef(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Concre
     max_rank = max(model.r[i, j] for (i, j) in model.E)
     K = max_rank + 1
 
-    # Envy-free constraint: for each college j, for each pair (i,h) with score_i >= score_h
+    # --- Envy constraints
     def envy_free_rule(model, i, j, h):
-        # Ensure we only create constraints when both applications exist
         if (i, j) not in model.E or (h, j) not in model.E:
             return pyo.Constraint.Skip
         if model.s[i, j] < model.s[h, j]:
             return pyo.Constraint.Skip
-        # sum over k with rank <= rank_ij
         rank_ij = model.r[i, j]
         sum_x = sum(model.x[i, k] for (ii, k) in model.E if ii == i and model.r[ii, k] <= rank_ij)
         return sum_x >= model.x[h, j]
@@ -322,6 +334,7 @@ def _build_msmr_ef(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Concre
                 sum_x = sum(model.x[i, k] for (ii, k) in model.E if ii == i and model.r[ii, k] <= rank_ij)
                 model.EnvyConstraints.add(sum_x >= model.x[h, j])
 
+    # --- Objective
     def objective(model):
         return sum((K - model.r[i, j]) * model.x[i, j] for (i, j) in model.E)
 
@@ -335,6 +348,7 @@ def _build_so_h_nw_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Co
     Variables: x (binary), t_j (continuous), f_j (binary), d_{ij} (binary).
     Constraints: (1),(2),(5),(6),(8),(17),(18),(19). Objective (10).
     """
+    # --- variables and parameters
     scores = data["scores"]
     big_m = max(scores.values()) + 2
     epsilon = 1e-6
@@ -342,7 +356,6 @@ def _build_so_h_nw_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Co
     # Cutoff and reject indicator variables
     model.t = pyo.Var(model.C, within=pyo.NonNegativeReals, bounds=(0, big_m))
     model.f = pyo.Var(model.C, within=pyo.Binary)
-    # d_{ij}: 1 if student i would be admitted to college j if cutoff decreased by one
     model.d = pyo.Var(model.E, within=pyo.Binary)
 
     # --- Cutoff constraints (5) and (6) ---
@@ -357,21 +370,19 @@ def _build_so_h_nw_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Co
     model.CutoffUpper = pyo.Constraint(model.E, rule=cutoff_upper)
     model.CutoffLower = pyo.Constraint(model.E, rule=cutoff_lower)
 
-    # --- Constraint (8): cutoff zero if no rejection ---
+    # --- Constraint (8)
     def cutoff_zero_if_no_reject(model, j):
         return model.t[j] <= model.f[j] * (big_m + 1)
 
     model.CutoffZeroIfNoReject = pyo.Constraint(model.C, rule=cutoff_zero_if_no_reject)
 
-    # --- Constraint (17): d_{ik} <= 1 - x_{ij} for all i and all j,k with r_{ik} >= r_{ij} ---
+    # --- Constraint (17)
     model.d_blocking_constraint = pyo.ConstraintList()
     for i in range(data["n"]):
         pref_i = data["preferences"][i]
-        # For each college j that student applied to, and each k with rank >= rank_ij
         for rank_idx_j, j in enumerate(pref_i):
             for rank_idx_k, k in enumerate(pref_i):
-                if rank_idx_k >= rank_idx_j:  # r_{ik} >= r_{ij}
-                    # need (i,j) and (i,k) in E
+                if rank_idx_k >= rank_idx_j:
                     if (i, j) in model.E and (i, k) in model.E:
                         model.d_blocking_constraint.add(
                             model.d[i, k] <= 1 - model.x[i, j]
@@ -393,10 +404,10 @@ def _build_so_h_nw_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Co
 
     model.NonWastefulness = pyo.Constraint(model.C, rule=non_wastefulness)
 
-    # --- Objective (10)
     max_rank = max(model.r[i, j] for (i, j) in model.E)
     K = max_rank + 1
 
+    # --- Objective (10)
     def objective(model):
         return sum((K - model.r[i, j]) * model.x[i, j] for (i, j) in model.E)
 
@@ -412,19 +423,22 @@ def _build_so_h_nw_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> py
     Variables: x (binary), t_j^k (binary), d_{ij} (binary).
     Constraints: (1),(2),(11),(12),(13),(17),(20),(21). Objective (10).
     """
+    # --- variables and parameters
     scores_by_college = _score_lists(data)
     score_pairs = [(j, score) for j in range(data["m"]) for score in scores_by_college[j]]
     model.TS = pyo.Set(initialize=score_pairs, dimen=2)
     model.t = pyo.Var(model.TS, within=pyo.Binary)
 
-    # d_{ij}: 1 if student i would be admitted to college j if cutoff decreased by one
     model.d = pyo.Var(model.E, within=pyo.Binary)
 
-    # --- Cutoff constraints (11), (12), (13)
+    # --- Cutoff constraints (11)
     def cutoff_ge_accept(model, i, j):
         sc = model.s[i, j]
         return model.x[i, j] <= model.t[j, sc]
 
+    model.CutoffGeAccept = pyo.Constraint(model.E, rule=cutoff_ge_accept)
+
+    # --- Monotonicity constraints (12)
     def monotonicity(model, j):
         score_list = scores_by_college[j]
         exprs = []
@@ -432,18 +446,19 @@ def _build_so_h_nw_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> py
             exprs.append(model.t[j, score_list[k]] <= model.t[j, score_list[k + 1]])
         return exprs
 
+    monotonicity_counter = 0
+    for j in range(data["m"]):
+        for expr in monotonicity(model, j):
+            model.add_component(f"Monotonicity_{j}_{monotonicity_counter}", pyo.Constraint(expr=expr))
+            monotonicity_counter += 1
+
+    # --- Constraint (13)
     def envy_rule(model, i, j):
         rank_ij = model.r[i, j]
         sum_x = sum(model.x[i, h] for (ii, h) in model.E if ii == i and model.r[ii, h] <= rank_ij)
         sc = model.s[i, j]
         return 1 <= sum_x + (1 - model.t[j, sc])
 
-    model.CutoffGeAccept = pyo.Constraint(model.E, rule=cutoff_ge_accept)
-    monotonicity_counter = 0
-    for j in range(data["m"]):
-        for expr in monotonicity(model, j):
-            model.add_component(f"Monotonicity_{j}_{monotonicity_counter}", pyo.Constraint(expr=expr))
-            monotonicity_counter += 1
     model.Envy = pyo.Constraint(model.E, rule=envy_rule)
 
     # --- Constraint (17)
@@ -483,10 +498,10 @@ def _build_so_h_nw_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> py
 
     model.NonWastefulnessBin = pyo.Constraint(model.C, rule=non_wastefulness_bin)
 
-    # --- Objective (10)
     max_rank = max(model.r[i, j] for (i, j) in model.E)
     K = max_rank + 1
 
+    # --- Objective (10)
     def objective(model):
         return sum((K - model.r[i, j]) * model.x[i, j] for (i, j) in model.E)
 
@@ -502,11 +517,11 @@ def _build_so_c_nw_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Co
     Variables: x (binary), t_j (continuous), f_j (binary), dbar_{ij} (binary).
     Constraints: (1),(5),(6),(7),(8),(22),(23),(24). Objective (10) max.
     """
+    # --- variables and parameters
     scores = data["scores"]
     big_m = max(scores.values()) + 2
     epsilon = 1e-6
 
-    # Cutoff and reject indicator variables (f_j)
     model.t = pyo.Var(model.C, within=pyo.NonNegativeReals, bounds=(0, big_m))
     model.f = pyo.Var(model.C, within=pyo.Binary)
 
@@ -578,33 +593,36 @@ def _build_so_c_nw_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> py
     model.TS = pyo.Set(initialize=score_pairs, dimen=2)
     model.t = pyo.Var(model.TS, within=pyo.Binary)
 
-    # dbar_{ij}
     model.dbar = pyo.Var(model.E, within=pyo.Binary)
 
-    # --- Constraints (11), (12), (13)
+    # --- Constraints (11)
     def cutoff_ge_accept(model, i, j):
         sc = model.s[i, j]
         return model.x[i, j] <= model.t[j, sc]
 
+    model.CutoffGeAccept = pyo.Constraint(model.E, rule=cutoff_ge_accept)
+
+    # --- Monotonicity constraints (12)
     def monotonicity(model, j):
         score_list = scores_by_college[j]
         exprs = []
         for k in range(len(score_list) - 1):
             exprs.append(model.t[j, score_list[k]] <= model.t[j, score_list[k + 1]])
         return exprs
+    
+    monotonicity_counter = 0
+    for j in range(data["m"]):
+        for expr in monotonicity(model, j):
+            model.add_component(f"Monotonicity_{j}_{monotonicity_counter}", pyo.Constraint(expr=expr))
+            monotonicity_counter += 1
 
+    # --- Envy constraints (13)
     def envy_rule(model, i, j):
         rank_ij = model.r[i, j]
         sum_x = sum(model.x[i, h] for (ii, h) in model.E if ii == i and model.r[ii, h] <= rank_ij)
         sc = model.s[i, j]
         return 1 <= sum_x + (1 - model.t[j, sc])
 
-    model.CutoffGeAccept = pyo.Constraint(model.E, rule=cutoff_ge_accept)
-    monotonicity_counter = 0
-    for j in range(data["m"]):
-        for expr in monotonicity(model, j):
-            model.add_component(f"Monotonicity_{j}_{monotonicity_counter}", pyo.Constraint(expr=expr))
-            monotonicity_counter += 1
     model.Envy = pyo.Constraint(model.E, rule=envy_rule)
 
     # --- Constraint (22)
