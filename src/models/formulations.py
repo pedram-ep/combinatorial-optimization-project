@@ -731,6 +731,24 @@ def _build_alt_so_c_nw_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -
 
 # build model function
 
+FomulationBuilder = Callable[[pyo.ConcreteModel, Dict[str, Any]], pyo.ConcreteModel]
+
+FORMULATION_REGISTRY: Dict[str, FomulationBuilder] = {
+    "SO-BB": _build_so_bb,
+    "SO-NW-CUT": _build_so_nw_cut,
+    "MIN-CUT": _build_min_cut,
+    "MSMR-CUT": _build_msmr_cut,
+    "SO-NW-BIN-CUT": _build_so_nw_bin_cut,
+    "MIN-BIN-CUT": _build_min_bin_cut,
+    "MSMR-BIN-CUT": _build_msmr_bin_cut,
+    "MSMR-EF": _build_msmr_ef,
+    "SO-H-NW-CUT": _build_so_h_nw_cut,
+    "SO-H-NW-BIN-CUT": _build_so_h_nw_bin_cut,
+    "SO-C-NW-CUT": _build_so_c_nw_cut,
+    "SO-C-NW-BIN-CUT": _build_so_c_nw_bin_cut,
+    "ALT-SO-C-NW-BIN-CUT": _build_alt_so_c_nw_bin_cut,
+}
+
 def build_model(data: Dict[str, Any] | str | Path, formulation: str = "SO-BB") -> pyo.ConcreteModel:
     """
     Build one formulation as a Pyomo model.
@@ -739,29 +757,7 @@ def build_model(data: Dict[str, Any] | str | Path, formulation: str = "SO-BB") -
     model = pyo.ConcreteModel()
     _build_common_components(model, data)
 
-    if formulation == "SO-BB":
-        return _build_so_bb(model, data)
-    elif formulation == "SO-NW-CUT":
-        return _build_so_nw_cut(model, data)
-    elif formulation == "MIN-CUT":
-        return _build_min_cut(model, data)
-    elif formulation == "MSMR-CUT":
-        return _build_msmr_cut(model, data)
-    elif formulation == "SO-NW-BIN-CUT":
-        return _build_so_nw_bin_cut(model, data)
-    elif formulation == "MIN-BIN-CUT":
-        return _build_min_bin_cut(model, data)
-    elif formulation == "MSMR-BIN-CUT":
-        return _build_msmr_bin_cut(model, data)
-    elif formulation == "MSMR-EF":
-        return _build_msmr_ef(model, data)
-    elif formulation == "SO-H-NW-CUT":
-        return _build_so_h_nw_cut(model, data)
-    elif formulation == "SO-H-NW-BIN-CUT":
-        return _build_so_h_nw_bin_cut(model, data)
-    elif formulation == "SO-C-NW-CUT":
-        return _build_so_c_nw_cut(model, data)
-    elif formulation == "SO-C-NW-BIN-CUT":
-        return _build_so_c_nw_bin_cut(model, data)
+    if formulation in FORMULATION_REGISTRY:
+        return FORMULATION_REGISTRY[formulation](model, data)
     else:
         raise ValueError(f"Unsupported formulation: {formulation}")
