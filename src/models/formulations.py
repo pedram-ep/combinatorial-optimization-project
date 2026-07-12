@@ -1,44 +1,11 @@
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Callable
 import pyomo.environ as pyo
 
 from ..data_loader import _normalize_data
 from .base import _build_common_components, _score_lists
 
-def build_model(data: Dict[str, Any] | str | Path, formulation: str = "SO-BB") -> pyo.ConcreteModel:
-    """
-    Build one formulation as a Pyomo model.
-    """
-    data = _normalize_data(data)
-    model = pyo.ConcreteModel()
-    _build_common_components(model, data)
-
-    if formulation == "SO-BB":
-        return _build_so_bb(model, data)
-    elif formulation == "SO-NW-CUT":
-        return _build_so_nw_cut(model, data)
-    elif formulation == "MIN-CUT":
-        return _build_min_cut(model, data)
-    elif formulation == "MSMR-CUT":
-        return _build_msmr_cut(model, data)
-    elif formulation == "SO-NW-BIN-CUT":
-        return _build_so_nw_bin_cut(model, data)
-    elif formulation == "MIN-BIN-CUT":
-        return _build_min_bin_cut(model, data)
-    elif formulation == "MSMR-BIN-CUT":
-        return _build_msmr_bin_cut(model, data)
-    elif formulation == "MSMR-EF":
-        return _build_msmr_ef(model, data)
-    elif formulation == "SO-H-NW-CUT":
-        return _build_so_h_nw_cut(model, data)
-    elif formulation == "SO-H-NW-BIN-CUT":
-        return _build_so_h_nw_bin_cut(model, data)
-    elif formulation == "SO-C-NW-CUT":
-        return _build_so_c_nw_cut(model, data)
-    elif formulation == "SO-C-NW-BIN-CUT":
-        return _build_so_c_nw_bin_cut(model, data)
-    else:
-        raise ValueError(f"Unsupported formulation: {formulation}")
+# --- Section 2 Formulations
 
 def _build_so_bb(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.ConcreteModel:
     """
@@ -341,6 +308,8 @@ def _build_msmr_ef(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.Concre
     model.Objective = pyo.Objective(rule=objective, sense=pyo.maximize)
     return model
 
+# --- Section 3 Formulations
+
 def _build_so_h_nw_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.ConcreteModel:
     """
     SO-H-NW-CUT: Student-Optimal Hungarian Non-Wasteful Cutoff (continuous).
@@ -509,6 +478,7 @@ def _build_so_h_nw_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> py
 
     return model
 
+# --- Section 4 Formulations
 
 def _build_so_c_nw_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.ConcreteModel:
     """
@@ -650,6 +620,90 @@ def _build_so_c_nw_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> py
                 prev_score = score_list[k-1]
                 model.dbar_cutoff_bin.add(model.dbar[i, j] <= model.t[j, sc] - model.t[j, prev_score])
     
+    # --- Objective (10)
+    max_rank = max(model.r[i, j] for (i, j) in model.E)
+    K = max_rank + 1
+
+    def objective(model):
+        return sum((K - model.r[i, j]) * model.x[i, j] for (i, j) in model.E)
+
+    model.Objective = pyo.Objective(rule=objective, sense=pyo.maximize)
+
+    # --- Deactivate capacity constraint (2)
+    model.Capacity.deactivate()
+
+    return model
+
+    # --- Alternative implementation of SO-C-NW-BIN-CUT
+def _build_alt_so_c_nw_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> pyo.ConcreteModel:
+    """
+    SO-C-NW-BIN-CUT: Student-Optimal Chilean Non-Wasteful Binary Cutoff.
+    Chilean permissive policy.
+    Variables: x (binary), t_j^k (binary), dbar_{ij} (binary).
+    Constraints: (1),(11),(12),(13),(22),(24),(25). Objective (10) max.
+    """
+    scores_by_college = _score_lists(data)
+    score_pairs = [(j, score) for j in range(data["m"]) for score in scores_by_college[j]]
+    model.TS = pyo.Set(initialize=score_pairs, dimen=2)
+    model.t = pyo.Var(model.TS, within=pyo.Binary)
+
+    model.dbar = pyo.Var(model.E, within=pyo.Binary)
+
+    # --- Constraints (11)
+    def cutoff_ge_accept(model, i, j):
+        sc = model.s[i, j]
+        return model.x[i, j] <= model.t[j, sc]
+
+    model.CutoffGeAccept = pyo.Constraint(model.E, rule=cutoff_ge_accept)
+
+    # --- Monotonicity constraints (12)
+    def monotonicity(model, j):
+        score_list = scores_by_college[j]
+        exprs = []
+        for k in range(len(score_list) - 1):
+            exprs.append(model.t[j, score_list[k]] <= model.t[j, score_list[k + 1]])
+        return exprs
+    
+    monotonicity_counter = 0
+    for j in range(data["m"]):
+        for expr in monotonicity(model, j):
+            model.add_component(f"Monotonicity_{j}_{monotonicity_counter}", pyo.Constraint(expr=expr))
+            monotonicity_counter += 1
+
+    # --- Envy constraints (13)
+    def envy_rule(model, i, j):
+        rank_ij = model.r[i, j]
+        sum_x = sum(model.x[i, h] for (ii, h) in model.E if ii == i and model.r[ii, h] <= rank_ij)
+        sc = model.s[i, j]
+        return 1 <= sum_x + (1 - model.t[j, sc])
+
+    model.Envy = pyo.Constraint(model.E, rule=envy_rule)
+
+    # --- Constraint (22)
+    def dbar_le_x(model, i, j):
+        return model.dbar[i, j] <= model.x[i, j]
+
+    model.DbarLeX = pyo.Constraint(model.E, rule=dbar_le_x)
+
+    # --- Constraint (24)
+    def non_wastefulness_chile_bin(model, j):
+        return sum(model.x[i, j2] - model.dbar[i, j2] for (i, j2) in model.E if j2 == j) <= model.u[j] - 1
+
+    model.NonWastefulnessChileBin = pyo.Constraint(model.C, rule=non_wastefulness_chile_bin)
+
+    # --- Constraint (25)
+    model.dbar_cutoff_bin = pyo.ConstraintList()
+    for (i, j) in model.E:
+        sc = model.s[i, j]
+        score_list = scores_by_college[j]
+        if sc in score_list:
+            k = score_list.index(sc)
+            if k == 0:
+                model.dbar_cutoff_bin.add(model.dbar[i, j] <= model.t[j, sc])
+            else:
+                prev_score = score_list[k-1]
+                model.dbar_cutoff_bin.add(model.dbar[i, j] <= model.t[j, sc] - model.t[j, prev_score])
+    
     # --- Non-wastefulness constraint (14) equivalent for Chilean
     # --- Not in the paper
     def chilean_lower_bound(model, j):
@@ -674,3 +728,40 @@ def _build_so_c_nw_bin_cut(model: pyo.ConcreteModel, data: Dict[str, Any]) -> py
     model.Capacity.deactivate()
 
     return model
+
+# build model function
+
+def build_model(data: Dict[str, Any] | str | Path, formulation: str = "SO-BB") -> pyo.ConcreteModel:
+    """
+    Build one formulation as a Pyomo model.
+    """
+    data = _normalize_data(data)
+    model = pyo.ConcreteModel()
+    _build_common_components(model, data)
+
+    if formulation == "SO-BB":
+        return _build_so_bb(model, data)
+    elif formulation == "SO-NW-CUT":
+        return _build_so_nw_cut(model, data)
+    elif formulation == "MIN-CUT":
+        return _build_min_cut(model, data)
+    elif formulation == "MSMR-CUT":
+        return _build_msmr_cut(model, data)
+    elif formulation == "SO-NW-BIN-CUT":
+        return _build_so_nw_bin_cut(model, data)
+    elif formulation == "MIN-BIN-CUT":
+        return _build_min_bin_cut(model, data)
+    elif formulation == "MSMR-BIN-CUT":
+        return _build_msmr_bin_cut(model, data)
+    elif formulation == "MSMR-EF":
+        return _build_msmr_ef(model, data)
+    elif formulation == "SO-H-NW-CUT":
+        return _build_so_h_nw_cut(model, data)
+    elif formulation == "SO-H-NW-BIN-CUT":
+        return _build_so_h_nw_bin_cut(model, data)
+    elif formulation == "SO-C-NW-CUT":
+        return _build_so_c_nw_cut(model, data)
+    elif formulation == "SO-C-NW-BIN-CUT":
+        return _build_so_c_nw_bin_cut(model, data)
+    else:
+        raise ValueError(f"Unsupported formulation: {formulation}")
